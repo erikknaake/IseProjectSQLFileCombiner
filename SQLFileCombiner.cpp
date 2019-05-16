@@ -12,18 +12,32 @@ int main()
 	const char* sqlPath = "sqlFile.sql";
 	const char* createScript = "create.sql";
 	const char* testFile = "testFile.sql";
-	const char* use = "USE IseProject";
+	const char* use = "USE BPMN_DB";
+	const char* clrEnablePath = "SetClrEnabled.sql";
+	const char* tSQLtClassPath = "tSQLt.class.sql";
 
 	std::ofstream testOutput(testFile, std::fstream::trunc);
 	std::ofstream sqlOutput(sqlPath, std::fstream::trunc);
-	std::fstream createFile(createScript);
+	std::fstream tempFile(createScript);
 
-	sqlOutput << createFile.rdbuf();
-	testOutput << "USE IseProject\n";
+	sqlOutput << tempFile.rdbuf() << std::endl;
+
+	testOutput << use << std::endl;
+	tempFile.close();
+	tempFile.open(clrEnablePath);
+	testOutput << tempFile.rdbuf();
+	tempFile.close();
+	tempFile.open(tSQLtClassPath);
+	testOutput << tempFile.rdbuf() << std::endl;
 
 	for (auto& file : fs::recursive_directory_iterator("./"))
 	{
-		if (file.path().u8string().find(".sql") == std::string::npos)
+		if (file.path().u8string().find(".sql") == std::string::npos
+			|| file.path().u8string().find(clrEnablePath) != std::string::npos
+			|| file.path().u8string().find(tSQLtClassPath) != std::string::npos
+			|| file.path().u8string().find(sqlPath) != std::string::npos
+			|| file.path().u8string().find(createScript) != std::string::npos
+			|| file.path().u8string().find(testFile) != std::string::npos)
 			continue;
 		std::cout << file.path().u8string() << std::endl;
 
@@ -33,6 +47,7 @@ int main()
 		if (!currentFile.is_open())
 		{
 			std::cout << file.path() << " could not be opened" << std::endl;
+			getchar();
 			break;
 		}
 
@@ -44,9 +59,7 @@ int main()
 					testOutput << line << std::endl;
 			}
 		}
-		else if (file.path().u8string().find(sqlPath) == std::string::npos 
-			&& file.path().u8string().find(createScript) == std::string::npos
-			&& file.path().u8string().find(testFile) == std::string::npos)
+		else
 		{
 			while (std::getline(currentFile, line))
 			{
@@ -54,6 +67,7 @@ int main()
 					sqlOutput << line << std::endl;
 			}
 		}	
+		currentFile.close();
 	}
 
 	testOutput << "\nEXEC tSQLt.RunAll\n";
