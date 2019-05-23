@@ -37,7 +37,8 @@ int main()
 			|| file.path().u8string().find(tSQLtClassPath) != std::string::npos
 			|| file.path().u8string().find(sqlPath) != std::string::npos
 			|| file.path().u8string().find(createScript) != std::string::npos
-			|| file.path().u8string().find(testFile) != std::string::npos)
+			|| file.path().u8string().find(testFile) != std::string::npos
+			|| file.path().u8string().find("privileges.spec.sql") != std::string::npos)
 			continue;
 		std::cout << file.path().u8string() << std::endl;
 
