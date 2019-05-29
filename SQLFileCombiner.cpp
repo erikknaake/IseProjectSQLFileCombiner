@@ -2,76 +2,140 @@
 #include <experimental/filesystem>
 #include <fstream>
 #include <string>
+#include <json/json.hpp>
+#include <regex>
 #include <map>
 
 namespace fs = std::experimental::filesystem;
+using json = nlohmann::json;
+
+bool matchRegex(const json* reg, std::string str)
+{
+	if (reg->type() == json::value_t::array)
+	{
+		bool matches = true;
+		for (auto i : *reg)
+		{
+			matches = matches && matchRegex(&i, str);
+		}
+		return matches;
+	}
+	if (reg->type() == json::value_t::object)
+	{
+		return (*reg)["invert"].get<bool>() ^ std::regex_match(str, std::regex((*reg)["regex"].get<std::string>()));
+	}
+	return std::regex_match(str, std::regex(reg->get<std::string>()));
+}
+
+bool skipFile(const json* config, const json* files, const fs::recursive_directory_iterator::value_type* file)
+{
+	for (auto ignoreFiles : (*config)["skipFiles"])
+	{
+		if (matchRegex(&ignoreFiles, file->path().u8string()))
+		{
+			return true;
+		}
+	}
+
+	for (auto dependencies : (*config)["testDependencies"])
+	{
+		if (matchRegex(&dependencies, file->path().u8string()))
+		{
+			return true;
+		}
+	}
+
+	for (auto allowFiles : *files)
+	{
+		if (matchRegex(&allowFiles, file->path().u8string()))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+template<typename Functor>
+void forEveryFileInOrder(const json* config, const json* files, Functor functor)
+{
+	std::map<std::string, int> includedFiles;
+	for (auto fileOrder : (*config)["fileOrder"])
+	{
+		for (auto file : fs::recursive_directory_iterator("./"))
+		{
+			
+			if (includedFiles.find(file.path().u8string()) != includedFiles.end()
+				|| skipFile(config, files, &file)
+				|| file.path().u8string().find((*config)["testFile"].get<std::string>()) != std::string::npos
+				|| file.path().u8string().find((*config)["outputFile"].get<std::string>()) != std::string::npos)
+				continue;
+			
+			includedFiles[file.path().u8string()] = true;
+
+			std::cout << file.path().u8string() << std::endl;
+			functor(file);
+		}
+	}
+}
+
+void addFiletoFile(std::ofstream* output, const fs::recursive_directory_iterator::value_type* file, const json* config)
+{
+	std::fstream input(*file);
+	std::string line;
+	while (std::getline(input, line))
+	{
+		bool include = true;
+		for (auto ignoreLines : (*config)["skipLines"])
+		{
+			if (std::regex_match(line, std::regex(ignoreLines.get<std::string>())))
+			{
+				include = false;
+				break;
+			}
+		}
+		if (include)
+			*output << line << std::endl;
+	}
+	input.close();
+}
 
 int main()
 {
-	// Output file, clear before use
-	const char* sqlPath = "sqlFile.sql";
-	const char* createScript = "create.sql";
-	const char* testFile = "testFile.sql";
-	const char* use = "USE BPMN_DB";
-	const char* clrEnablePath = "SetClrEnabled.sql";
-	const char* tSQLtClassPath = "tSQLt.class.sql";
+	std::fstream configFile("parserConfig.json");
+	json config = json::parse(configFile);
+	configFile.close();
+	std::ofstream testFile(config["testFile"].get<std::string>(), std::ios::trunc);
+	std::ofstream outputFile(config["outputFile"].get<std::string>(), std::ios::trunc);
 
-	std::ofstream testOutput(testFile, std::fstream::trunc);
-	std::ofstream sqlOutput(sqlPath, std::fstream::trunc);
-	std::fstream tempFile(createScript);
+	for (auto i : config["addTestLines"]["start"])
+		testFile << i.get<std::string>() << std::endl;
 
-	sqlOutput << tempFile.rdbuf() << std::endl;
-
-	testOutput << use << std::endl;
-	tempFile.close();
-	tempFile.open(clrEnablePath);
-	testOutput << tempFile.rdbuf();
-	tempFile.close();
-	tempFile.open(tSQLtClassPath);
-	testOutput << tempFile.rdbuf() << std::endl;
-
-	for (auto& file : fs::recursive_directory_iterator("./"))
+	for (auto i : config["testDependencies"])
 	{
-		if (file.path().u8string().find(".sql") == std::string::npos
-			|| file.path().u8string().find(clrEnablePath) != std::string::npos
-			|| file.path().u8string().find(tSQLtClassPath) != std::string::npos
-			|| file.path().u8string().find(sqlPath) != std::string::npos
-			|| file.path().u8string().find(createScript) != std::string::npos
-			|| file.path().u8string().find(testFile) != std::string::npos
-			|| file.path().u8string().find("privileges.spec.sql") != std::string::npos)
-			continue;
-		std::cout << file.path().u8string() << std::endl;
-
-		std::string line;
-		std::fstream currentFile(file);
-
-		if (!currentFile.is_open())
+		for (auto file : fs::recursive_directory_iterator("./"))
 		{
-			std::cout << file.path() << " could not be opened" << std::endl;
-			getchar();
-			break;
-		}
-
-		if (file.path().u8string().find(".spec") != std::string::npos)
-		{
-			while (std::getline(currentFile, line))
+			if (matchRegex(&i, file.path().u8string()))
 			{
-				if (line.find("EXEC tSQLt.Run") == std::string::npos && line.find(use) == std::string::npos)
-					testOutput << line << std::endl;
+				std::fstream dependency(file);
+				testFile << dependency.rdbuf();
+				dependency.close();
 			}
 		}
-		else
-		{
-			while (std::getline(currentFile, line))
-			{
-				if (line.find(use) == std::string::npos)
-					sqlOutput << line << std::endl;
-			}
-		}	
-		currentFile.close();
 	}
+		
+	forEveryFileInOrder(&config, &config["testFiles"], [&testFile, &config](fs::recursive_directory_iterator::value_type file)
+	{
+		addFiletoFile(&testFile, &file, &config);
+	});
 
-	testOutput << "\nEXEC tSQLt.RunAll\n";
-	sqlOutput.close();
-	testOutput.close();
+	forEveryFileInOrder(&config, &config["standardFiles"], [&outputFile, &config](fs::recursive_directory_iterator::value_type file) 
+	{
+		addFiletoFile(&outputFile, &file, &config);
+	});
+
+	for (auto i : config["addTestLines"]["end"])
+		testFile << i.get<std::string>() << std::endl;
+
+	testFile.close();
+	outputFile.close();
 }

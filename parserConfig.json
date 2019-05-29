@@ -1,0 +1,71 @@
+{
+  "outputFile": "sqlFile.sql",
+  "testFile": "testFile.sql",
+
+  "testFiles": [
+    ".*[.]spec[.]sql$"
+  ],
+
+  "standardFiles": [
+    [
+      {
+        "invert": false,
+        "regex": ".*[.]sql$"
+      },
+      {
+        "invert": true,
+        "regex": ".*[.]spec[.]sql$"
+      }
+    ]
+  ],
+
+  "skipLines": [
+    "^USE BPMN_DB.*",
+    "^EXEC tSQLt.Run.*"
+  ],
+
+  "testDependencies": [
+    ".*SetClrEnabled.sql$",
+    ".*tSQLt.class.sql$"
+  ],
+
+  "fileOrder": [
+    {
+      "invert": false,
+      "regex": ".*create.sql$"
+    },
+    {
+      "invert": false,
+      "regex": ".*privileges.sql$"
+    },
+    {
+      "invert": false,
+      "regex": ".*insert.sql$"
+    },
+    {
+      "invert": true,
+      "regex": "^(SDR-|C-).*"
+    },
+    {
+      "invert": false,
+      "regex": "^SDR-.*"
+    },
+    {
+      "invert": false,
+      "regex": "^C-.*"
+    }
+  ],
+
+  "skipFiles": [
+    ".*privileges.spec.sql$"
+  ],
+
+  "addTestLines": {
+    "start": [
+      
+    ],
+    "end": [
+      "EXEC tSQLt.RunAll"
+    ]
+  }
+}
